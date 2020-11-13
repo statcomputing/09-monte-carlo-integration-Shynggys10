@@ -143,7 +143,7 @@ optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
     vGeo <- vAri - cov(pGeo, pAri) / var(pGeo) * (mean(pGeo) - pGeoTrue)
     ## sim <- data.frame(pAri, ST, pStd, pGeo)
     ## result
-    return(c(cov(ST, pAri)/(sd(ST) * sd(pAri)), cov(pStd, pAri)/(sd(pStd) * sd(pAri)), cov(pGeo, pAri)/(sd(pGeo) * sd(pAri))))
+    return(c(pAri, ST, pStd, pGeo) * exp(-r * TT))
 }
 ```
 
@@ -154,7 +154,7 @@ r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  c(1.2, 1.3, 1.4, 1.5)
 tgrid <-  seq(0, 1, length = 12)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, sigma, S0, 1.1, tgrid))
-correlations <- apply(sim, 1, mean)
+correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -173,7 +173,7 @@ r <- 0.05; sigma <- c(0.3, 0.4, 0.5); S0 <-  1; K <-  1.5
 tgrid <-  seq(0, 1, length = 12)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, 0.2, S0, K, tgrid))
-correlations <- apply(sim, 1, mean)
+correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -183,7 +183,7 @@ for (s in sigma){
 }
 correlations
 ```
-It can be seen that as $\sigma$ increases, positive correlations increase.
+It can be seen that as $\sigma$ increases, positive correlation between the asset and arithmetic asian option declines. But the correlation between Geometric and Arithmetic Asian stocks increase.
 
 Part d. Now we set $\sigma=0.5, K=1.5$. We do the same procedure as in Part c but with varying $T \in \{0.4, 0.7, 1, 1.3, 1.6\}$. 
 
@@ -192,7 +192,7 @@ r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  1.5 ; T <- c(0.7, 1, 1.3, 1.6)
 tgrid <-  seq(0, 0.4, length = 12)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, sigma, S0, K, tgrid))
-correlations <- apply(sim, 1, mean)
+correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -203,12 +203,12 @@ for (t in T){
 }
 correlations
 ```
-It can be seen that as T increases, positive correlations increase as well. In all three parts the strongest positive correlations observed between Geometric and Atirhmetic Asian options, which was expected.
+It can be seen that as T increases, positive correlations deacrease. 
 
 Part e. Now we set $\sigma=0.4, T=1, K=1.5$. By using $P_G$ as a control variate we need to develop a control variate MC estimator for $E[P_A]$. 
 
 ```{r}
-optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
+optValueAppr_2 <- function(n, r, sigma, S0, K, tgrid) {
     wt <- rBM(n, tgrid, sigma)
     ## payoff of call option on arithmetic average
     nt <- length(tgrid)
@@ -216,7 +216,7 @@ optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
     St <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, n, nt, byrow = TRUE) + wt)
     pAri <- pmax(rowMeans(St) - K, 0)
     vAri <- mean(pAri) 
-   
+    
     ## payoff of call option on geometric average
     pGeo <- pmax(exp(rowMeans(log(St))) - K, 0)
     tbar <- mean(tgrid)
@@ -226,6 +226,23 @@ optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
     vGeo <- vAri - cov(pGeo, pAri) / var(pGeo) * (mean(pGeo) - pGeoTrue)
     ## sim <- data.frame(pAri, ST, pStd, pGeo)
     ## result
-    c(vAri, vAs, vStd, vGeo) * exp(-r * TT)
+    return(c(vAri, vGeo) * exp(-r * TT))
 }
 ```
+
+```{r}
+r <- 0.05; sigma <- 0.4; S0 <-  1; K <-  1.5
+tgrid <-  seq(0, 1, length = 12)[-1]
+sim <- replicate(200, optValueAppr_2(5000, r, sigma, S0, K, tgrid))
+values <- apply(sim, 1, mean)
+values <- data.frame("Value with no VC" = values[1], "Value with P_G as VC" = values[2])
+values
+```
+
+```{r}
+sds <- apply(sim, 1, sd)
+sds <- data.frame("Value with no VC" = sds[1], "Value with P_G as VC" = sds[2])
+sds
+```
+
+Take a look at the SD when using $P_G$ as a control variate. It is way less than when without one. It shows that the variance was reduced indeed.
