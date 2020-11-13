@@ -1,0 +1,231 @@
+---
+title: "Homework 9"
+author: "Shynggys Magzanov"
+date: "11 11 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercise 7.5.1.
+### In this exercise we are given a random variable X that has a density of f(x). Our goal is to implement important sampling method to estimate second moment.
+
+Part a. We need to implement important sampling algorithm using the standard normal density as our $g(x)$. Here our $h(x)=x^2$. 
+
+```{r}
+isAppr <- function(n, h, df, dg, rg, ...) {
+  x <- rg(n, ...)
+  mean( h(x) * df(x) / dg(x, ...) )
+}
+
+h <- function(x) x^2
+df <- function(x) 0.2 * x^2 * dnorm(x, mean = 2, sd = 1)
+rg <- function(n) rnorm(n, mean = 0, sd = 1)
+dg <- function(x) dnorm(x, mean = 0, sd = 1)
+
+mySummary <- function(nrep, n, h, df, dg, rg) {
+##    browser()
+    sim <- replicate(nrep, isAppr(n, h, df, dg, rg))
+    return(c(mean(sim), sd(sim)))
+}
+
+appr <- mySummary(100, 1000, h, df, dg, rg)
+appr <- data.frame("Mean"=appr[1], "Std"=appr[2])
+
+size <- c(10000, 50000)
+for (i in size){
+   temp <- mySummary(100, i, h, df, dg, rg)
+   appr <- rbind(appr,temp)
+}
+appr         
+```
+
+Part b. Now we need to design better importance sampling method using different $g(x)$. Let us first plot $h(x)f(x)$
+
+```{r}
+h <- function(x) x^2
+df <- function(x) 0.2 *x^2 * dnorm(x, mean = 2, sd = 1)
+integrand <- function(x) h(x) * df(x)
+
+curve(integrand, from = -10, to = 10)
+```
+
+This looks like a Normal distribution. After some empirical analysis $g(x)=N(3.25,0.8)$. Take a look at the graph below, where the red line represents $g(x)$ and the black one represents $f(x)*h(x)$.
+
+```{r}
+dg <- function(x) dnorm(x, mean = 3.25, sd = 0.8)
+
+plot(dg, from = -10, to = 10, col = "red")
+par(new = TRUE)
+plot.function(integrand, to = 10, from = -10)
+```
+
+Part c. Now we need to implement importance sampling method using the newly found $g(x)$.
+
+```{r}
+isAppr <- function(n, h, df, dg, rg, ...) {
+  x <- rg(n, ...)
+  mean( h(x) * df(x) / dg(x, ...) )
+}
+
+h <- function(x) x^2
+df <- function(x) 0.2 * x^2 * dnorm(x, mean = 2, sd = 1)
+rg <- function(n) rnorm(n, mean = 3.25, sd = 0.8)
+dg <- function(x) dnorm(x, mean = 3.25, sd = 0.8)
+
+mySummary <- function(nrep, n, h, df, dg, rg) {
+##    browser()
+    sim <- replicate(nrep, isAppr(n, h, df, dg, rg))
+    return(c(mean(sim), sd(sim)))
+}
+
+appr <- mySummary(100, 1000, h, df, dg, rg)
+appr <- data.frame("Mean"=appr[1], "Std"=appr[2])
+
+size <- c(10000, 50000)
+for (i in size){
+   temp <- mySummary(100, i, h, df, dg, rg)
+   appr <- rbind(appr,temp)
+}
+appr   
+```
+
+Part d. It can be seen the with modified $g(x)$ the approximation becomes better at sample sizes 1000 and 10000.  
+
+## Exercise 7.5.2.
+
+Part a. We need to implement sampling algorithm of the path of $S(t)$. Sample path of BM is implemented as follows:
+
+```{r}
+rBM <- function(n, tgrid, sigma) {
+    tt <- c(0, tgrid)
+    dt <- diff(tt)
+    nt <- length(tgrid)
+    dw <- matrix(rnorm(n * nt, sd = sigma * sqrt(dt)), n, nt, byrow = TRUE)
+    t(apply(dw, 1, cumsum))
+}
+```
+
+```{r}
+callValLognorm <- function(S0, K, mu, sigma) {
+    d <- (log(S0 / K) + mu + sigma^2) / sigma
+    S0 * exp(mu + 0.5 * sigma^2) * pnorm(d) - K * pnorm(d - sigma)
+}
+```
+
+```{r}
+optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
+    wt <- rBM(n, tgrid, sigma)
+    ## payoff of call option on arithmetic average
+    nt <- length(tgrid)
+    TT <- tgrid[nt]
+    St <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, n, nt, byrow = TRUE) + wt)
+    pAri <- pmax(rowMeans(St) - K, 0)
+    vAri <- mean(pAri) 
+    
+    ## underlying asset price
+    ST <- St[, nt]
+    vAs <- vAri - cov(ST, pAri) / var(ST) * (mean(ST) - exp(r * TT) * S0)
+    
+    ## value of standard option
+    pStd <- pmax(ST - K, 0)
+    pStdTrue <- callValLognorm(S0, K, (r - 0.5 * sigma^2) * TT,
+                               sigma * sqrt(TT))
+    vStd <-  vAri - cov(pStd, pAri) / var(pStd) * (mean(pStd) - pStdTrue)
+    ## payoff of call option on geometric average
+    pGeo <- pmax(exp(rowMeans(log(St))) - K, 0)
+    tbar <- mean(tgrid)
+    sBar2 <- sigma^2 / nt^2 / tbar * sum( (2 * seq(nt) - 1) * rev(tgrid) )
+    pGeoTrue <- callValLognorm(S0, K, (r - 0.5 * sigma^2) * tbar,
+                               sqrt(sBar2 * tbar))
+    vGeo <- vAri - cov(pGeo, pAri) / var(pGeo) * (mean(pGeo) - pGeoTrue)
+    ## sim <- data.frame(pAri, ST, pStd, pGeo)
+    ## result
+    return(c(cov(ST, pAri)/(sd(ST) * sd(pAri)), cov(pStd, pAri)/(sd(pStd) * sd(pAri)), cov(pGeo, pAri)/(sd(pGeo) * sd(pAri))))
+}
+```
+
+Part b. Now we fix $\sigma = 0.5, T=1$. And for each value of $K \in \{1.1,1.2,1.3,1.4,1.5\}$ we simulate 5000 sample paths of S(t) to get MC estimates of correlations between $P_{A}$ and $S(T)$, $P_{A}$ and $P_E$, P_A and $P_{G}$. 
+
+```{r}
+r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  c(1.2, 1.3, 1.4, 1.5)
+tgrid <-  seq(0, 1, length = 12)[-1]
+
+sim <- replicate(200, optValueAppr(5000, r, sigma, S0, 1.1, tgrid))
+correlations <- apply(sim, 1, mean)
+correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
+                           "Geo Asian and Arith Asian" = correlations[3])
+
+for (k in K){
+  sim <- replicate(200, optValueAppr(5000, r, sigma, S0, k, tgrid))
+  correlations <- rbind( correlations, apply(sim, 1, mean))
+}
+correlations
+```
+It can be seen that as K increases the all the positive correlations decline.
+
+Part c. Now we fix $T=1, K=1.5$. We do the same procedure as in Part b but with varying $\sigma \in \{0.2,0.3,0.4,0.5\}$.
+
+```{r}
+r <- 0.05; sigma <- c(0.3, 0.4, 0.5); S0 <-  1; K <-  1.5
+tgrid <-  seq(0, 1, length = 12)[-1]
+
+sim <- replicate(200, optValueAppr(5000, r, 0.2, S0, K, tgrid))
+correlations <- apply(sim, 1, mean)
+correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
+                           "Geo Asian and Arith Asian" = correlations[3])
+
+for (s in sigma){
+  sim <- replicate(200, optValueAppr(5000, r, s, S0, K, tgrid))
+  correlations <- rbind( correlations, apply(sim, 1, mean))
+}
+correlations
+```
+It can be seen that as $\sigma$ increases, positive correlations increase.
+
+Part d. Now we set $\sigma=0.5, K=1.5$. We do the same procedure as in Part c but with varying $T \in \{0.4, 0.7, 1, 1.3, 1.6\}$. 
+
+```{r}
+r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  1.5 ; T <- c(0.7, 1, 1.3, 1.6)
+tgrid <-  seq(0, 0.4, length = 12)[-1]
+
+sim <- replicate(200, optValueAppr(5000, r, sigma, S0, K, tgrid))
+correlations <- apply(sim, 1, mean)
+correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
+                           "Geo Asian and Arith Asian" = correlations[3])
+
+for (t in T){
+  tgrid <-  seq(0, t, length = 12)[-1]
+  sim <- replicate(200, optValueAppr(5000, r, s, S0, K, tgrid))
+  correlations <- rbind( correlations, apply(sim, 1, mean))
+}
+correlations
+```
+It can be seen that as T increases, positive correlations increase as well. In all three parts the strongest positive correlations observed between Geometric and Atirhmetic Asian options, which was expected.
+
+Part e. Now we set $\sigma=0.4, T=1, K=1.5$. By using $P_G$ as a control variate we need to develop a control variate MC estimator for $E[P_A]$. 
+
+```{r}
+optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
+    wt <- rBM(n, tgrid, sigma)
+    ## payoff of call option on arithmetic average
+    nt <- length(tgrid)
+    TT <- tgrid[nt]
+    St <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, n, nt, byrow = TRUE) + wt)
+    pAri <- pmax(rowMeans(St) - K, 0)
+    vAri <- mean(pAri) 
+   
+    ## payoff of call option on geometric average
+    pGeo <- pmax(exp(rowMeans(log(St))) - K, 0)
+    tbar <- mean(tgrid)
+    sBar2 <- sigma^2 / nt^2 / tbar * sum( (2 * seq(nt) - 1) * rev(tgrid) )
+    pGeoTrue <- callValLognorm(S0, K, (r - 0.5 * sigma^2) * tbar,
+                               sqrt(sBar2 * tbar))
+    vGeo <- vAri - cov(pGeo, pAri) / var(pGeo) * (mean(pGeo) - pGeoTrue)
+    ## sim <- data.frame(pAri, ST, pStd, pGeo)
+    ## result
+    c(vAri, vAs, vStd, vGeo) * exp(-r * TT)
+}
+```
