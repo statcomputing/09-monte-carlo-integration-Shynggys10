@@ -122,28 +122,20 @@ optValueAppr <- function(n, r, sigma, S0, K, tgrid) {
     nt <- length(tgrid)
     TT <- tgrid[nt]
     St <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, n, nt, byrow = TRUE) + wt)
-    pAri <- pmax(rowMeans(St) - K, 0)
-    vAri <- mean(pAri) 
+    pAri <- pmax(rowMeans(St) - K, 0)* exp(-r * TT)
     
     ## underlying asset price
     ST <- St[, nt]
-    vAs <- vAri - cov(ST, pAri) / var(ST) * (mean(ST) - exp(r * TT) * S0)
     
     ## value of standard option
-    pStd <- pmax(ST - K, 0)
-    pStdTrue <- callValLognorm(S0, K, (r - 0.5 * sigma^2) * TT,
-                               sigma * sqrt(TT))
-    vStd <-  vAri - cov(pStd, pAri) / var(pStd) * (mean(pStd) - pStdTrue)
+    pStd <- pmax(ST - K, 0)* exp(-r * TT)
+    
     ## payoff of call option on geometric average
-    pGeo <- pmax(exp(rowMeans(log(St))) - K, 0)
-    tbar <- mean(tgrid)
-    sBar2 <- sigma^2 / nt^2 / tbar * sum( (2 * seq(nt) - 1) * rev(tgrid) )
-    pGeoTrue <- callValLognorm(S0, K, (r - 0.5 * sigma^2) * tbar,
-                               sqrt(sBar2 * tbar))
-    vGeo <- vAri - cov(pGeo, pAri) / var(pGeo) * (mean(pGeo) - pGeoTrue)
+    pGeo <- pmax(exp(rowMeans(log(St))) - K, 0)* exp(-r * TT)
+    
     ## sim <- data.frame(pAri, ST, pStd, pGeo)
     ## result
-    return(c(pAri, ST, pStd, pGeo) * exp(-r * TT))
+    return(c(cor(pAri, ST), cor(pAri, pStd), cor(pAri, pGeo)) )
 }
 ```
 
@@ -154,7 +146,7 @@ r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  c(1.2, 1.3, 1.4, 1.5)
 tgrid <-  seq(0, 1, length = 12)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, sigma, S0, 1.1, tgrid))
-correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
+correlations <- apply(sim, 1, mean)
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -170,10 +162,10 @@ Part c. Now we fix $T=1, K=1.5$. We do the same procedure as in Part b but with 
 
 ```{r}
 r <- 0.05; sigma <- c(0.3, 0.4, 0.5); S0 <-  1; K <-  1.5
-tgrid <-  seq(0, 1, length = 12)[-1]
+tgrid <-  seq(0, 1, length = 13)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, 0.2, S0, K, tgrid))
-correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
+correlations <- apply(sim, 1, mean)
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -183,16 +175,16 @@ for (s in sigma){
 }
 correlations
 ```
-It can be seen that as $\sigma$ increases, positive correlation between the asset and arithmetic asian option declines. But the correlation between Geometric and Arithmetic Asian stocks increase.
+It can be seen that as $\sigma$ increases, positive correlations increase.
 
 Part d. Now we set $\sigma=0.5, K=1.5$. We do the same procedure as in Part c but with varying $T \in \{0.4, 0.7, 1, 1.3, 1.6\}$. 
 
 ```{r}
 r <- 0.05; sigma <- 0.5; S0 <-  1; K <-  1.5 ; T <- c(0.7, 1, 1.3, 1.6)
-tgrid <-  seq(0, 0.4, length = 12)[-1]
+tgrid <-  seq(0, 0.4, length = 13)[-1]
 
 sim <- replicate(200, optValueAppr(5000, r, sigma, S0, K, tgrid))
-correlations <- c(cor(sim[1,], sim[2,]), cor(sim[1,], sim[3,]), cor(sim[1,], sim[4,]))
+correlations <- apply(sim, 1, mean)
 correlations <- data.frame("S(t) and Arith Asian"=correlations[1], "European and Arith Asian"=correlations[2],
                            "Geo Asian and Arith Asian" = correlations[3])
 
@@ -203,7 +195,8 @@ for (t in T){
 }
 correlations
 ```
-It can be seen that as T increases, positive correlations deacrease. 
+
+It can be seen that as T increases, positive correlations increase. 
 
 Part e. Now we set $\sigma=0.4, T=1, K=1.5$. By using $P_G$ as a control variate we need to develop a control variate MC estimator for $E[P_A]$. 
 
@@ -232,7 +225,7 @@ optValueAppr_2 <- function(n, r, sigma, S0, K, tgrid) {
 
 ```{r}
 r <- 0.05; sigma <- 0.4; S0 <-  1; K <-  1.5
-tgrid <-  seq(0, 1, length = 12)[-1]
+tgrid <-  seq(0, 1, length = 13)[-1]
 sim <- replicate(200, optValueAppr_2(5000, r, sigma, S0, K, tgrid))
 values <- apply(sim, 1, mean)
 values <- data.frame("Value with no VC" = values[1], "Value with P_G as VC" = values[2])
